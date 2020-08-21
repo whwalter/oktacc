@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 	"net/url"
+	"net/http"
 )
 
 // OktaWellKnown represents the valuse from an okta authserver .well-known endpoint
@@ -36,7 +37,7 @@ type OAuthWellKnown struct {
 // Client implements an okta client credentials flow client
 type Client struct {
 	mux sync.Mutex
-	tokenEndpoint url.Url
+	tokenEndpoint url.URL
 	id string
 	secret string
 	httpClient *http.Client

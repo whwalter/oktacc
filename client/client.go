@@ -9,22 +9,34 @@ import (
 	"time"
 	"strings"
 
-//	log "github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 const grant_type = "client_credentials"
 
-func NewClient(oktaDomain, oktaAuthServerID, clientID, clientSecret string, httpClient *http.Client) (client *Client, err error) {
 
+func encodeCredentials(ID, Secret string) string {
+	msg := ID + ":" + Secret
+	return base64.StdEncoding.EncodeToString([]byte(msg))	
+}
+
+func NewClient(config ClientConfig) (client *Client, err error) {
+
+	// use default http.Client if non-was passed
+	if config.HTTPClient == nil {
+		config.HTTPClient = &http.Client{}
+	}	
+	// populate auth server url or use default
 	authServer := "/"
-	if oktaAuthServerID != "" { 
-		authServer = authServer + oktaAuthServerID + "/"
+	if config.OktaAuthServerID != "" { 
+		authServer = authServer + config.OktaAuthServerID + "/"
 	} else {
 		authServer = authServer + "default/" 
 	}
-	wellKnownURL := "https://" + oktaDomain + "/oauth2" +  authServer + ".well-known/oauth-authorization-server"
-	fmt.Println(wellKnownURL)
-	resp, err := http.Get(wellKnownURL)
+
+	// create well-known oauth url and request metadata
+	wellKnownURL := "https://" + config.OktaDomain + "/oauth2" +  authServer + ".well-known/oauth-authorization-server"
+	resp, err := config.HTTPClient.Get(wellKnownURL)
 	if err != nil {
 		return nil, err
 	}
@@ -39,88 +51,140 @@ func NewClient(oktaDomain, oktaAuthServerID, clientID, clientSecret string, http
 		return nil, fmt.Errorf("No token enpoint detected from well-known: %v", wellKnown)
 	}
 
+	// parse token uri from well known response
 	tURL, err := url.Parse(wellKnown.TokenEndpoint)
 	if err != nil {
 		return nil, err
 	}
+
+	key := encodeCredentials(config.ID, config.Secret)
+
+	scopes := strings.Join(config.Scopes, "+")
+
 	return &Client{
 		tokenEndpoint: *tURL,
-		id: clientID,
-		secret: clientSecret,
-		httpClient: httpClient,
+		key: key,
+		scopes: scopes,
+		config: config,
 	}, nil
 }
 
 
-func (c *Client) GetToken(scopes []string) (string, error){
-	if c.token.AccessToken == "" {
-		// get new token
-		err := newToken(c, scopes)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	if time.Now().After(c.token.Expiry) {
-		// get new token
-		err := newToken(c, scopes)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	return c.token.AccessToken, nil
-	
-}
-
-func newToken(c *Client, scopes []string) error {
-
-	c.lock()
-	defer c.unlock()
-	dest := c.tokenEndpoint
-	data := url.Values{}
-	data.Set("scope", strings.Join(scopes, "+"))
-	data.Add("grant_type", grant_type)
-	dest.RawQuery = data.Encode()
-
-	req, err := http.NewRequest(http.MethodPost, dest.String(), strings.NewReader(data.Encode()))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", encodeCredentials(c.id, c.secret)))
-	req.Header.Add("Cache-Control", "no-cache")
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	t := time.Now()
-	var tokenResp TokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return err
-	}
-
-	tokenResp.Expiry = t.Add(time.Second * time.Duration(tokenResp.ExpiresIn))
-	c.token = tokenResp
-
-	return nil
-
-}
-
-func encodeCredentials(ID, Secret string) string {
-	msg := ID + ":" + Secret
-	return base64.StdEncoding.EncodeToString([]byte(msg))	
-}
-
 func (c *Client) lock(){
+	fmt.Println("Locking")
 	c.mux.Lock()
 }
 
 func (c *Client) unlock(){
+	fmt.Println("Unlocking")
 	c.mux.Unlock()
+}
+
+func (c *Client) Get(dest string) (*http.Response, error) {
+
+	log.Info("Getting")
+	token, err := c.getToken()
+	if err != nil {
+		return nil, err
+	}
+
+	if token == "" {
+		return nil, fmt.Errorf("Failed to get okta token")
+	}
+	req, _ := http.NewRequest(http.MethodGet, dest, nil)
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
+	resp, err := c.config.HTTPClient.Do(req)
+	return resp, err
+}
+
+func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	log.Info("Doing")
+	token, err := c.getToken()
+	if err != nil {
+		return nil, err
+	}
+	if token == "" {
+		return nil, fmt.Errorf("Failed to get okta token")
+	}
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
+	resp, err := c.config.HTTPClient.Do(req)
+	return resp, err
+}
+
+func (c *Client) getToken() (string, error) {
+	log.Info("In get token")
+	if c.token.AccessToken == "" || time.Now().After(c.token.Expiry) {
+
+		log.Info("Need a new token")
+		if c.request == nil {
+			log.Info("Getting a new token")
+			errCh := make(chan error, 3)
+			c.request = &tokenRequest{ doneCh: make(chan struct{}), errCh: errCh}
+
+			logger := log.WithFields(log.Fields{"id": c.config.ID, "method": http.MethodPost})
+			go func() {
+				defer close(errCh)
+				defer c.request.done()
+				dest := c.tokenEndpoint
+				data := url.Values{}
+				data.Set("scope", c.scopes)
+				data.Add("grant_type", grant_type)
+				dest.RawQuery = data.Encode()
+
+				req, _ := http.NewRequest(http.MethodPost, dest.String(), strings.NewReader(data.Encode()))
+
+				req.Header.Add("Accept", "application/json")
+				req.Header.Add("Authorization", fmt.Sprintf("Basic %s", c.key))
+				req.Header.Add("Cache-Control", "no-cache")
+				req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+				resp, err := c.config.HTTPClient.Do(req)
+				if err != nil {
+					logger.Errorf("Request for new token failed: %v", err)
+					c.request.errCh <- err	
+					return
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode >= 400 {
+					var errResp []byte
+					json.NewDecoder(resp.Body).Decode(&errResp)
+					c.request.errCh <- fmt.Errorf("API Error from Okta: %v", resp)
+					return
+				}
+				t := time.Now()
+				var tokenResp TokenResponse
+				if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+					logger.Errorf("Failed to decode token response: %v", err)
+					c.request.errCh <- err	
+					return
+				}
+
+				c.lock()
+				defer c.unlock()
+				tokenResp.Expiry = t.Add(time.Second * time.Duration(tokenResp.ExpiresIn))
+				c.token = tokenResp
+
+				c.request = nil
+			}()
+		}
+		log.Info("Awaiting a new token")
+
+		c.lock()
+		request := c.request
+		c.unlock()
+
+		log.Info("Waiting for errors or the go routine to finish")
+		for err := range request.errCh {
+			if err != nil {
+				return "", err
+			}		
+		}
+
+		select {
+		case <- request.wait():
+			return c.token.AccessToken, nil
+		}
+	}
+	return c.token.AccessToken, nil
 }

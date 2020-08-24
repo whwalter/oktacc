@@ -5,8 +5,17 @@ import (
 	"time"
 	"net/url"
 	"net/http"
+	"errors"
 )
 
+
+type ErrorResponse struct {
+	ErrorCode	string `json:"errorCode"`
+	ErrorSummary	string `json:"errorSummary"`
+	ErrorLink	string `json:"errorLink"`
+	ErrorId		string `json:"errorId"`
+	ErrorCauses	string `json:"errorCauses"`
+}
 // OktaWellKnown represents the valuse from an okta authserver .well-known endpoint
 type OAuthWellKnown struct {
 	Issuer                                    string   `json:"issuer"`
@@ -37,11 +46,49 @@ type OAuthWellKnown struct {
 // Client implements an okta client credentials flow client
 type Client struct {
 	mux sync.Mutex
+	request *tokenRequest
 	tokenEndpoint url.URL
-	id string
-	secret string
-	httpClient *http.Client
+	key string
+	scopes string
+	config ClientConfig
 	token TokenResponse
+}
+
+
+type MockClient struct {}
+
+func (mc *MockClient) Do(req *http.Request) (*http.Response, error){
+	return nil, errors.New("Failed")
+}
+
+func (mc *MockClient) Get(dest string) (*http.Response, error){
+	return nil, errors.New("Failed")
+}
+
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+	Get(dest string) (*http.Response, error)
+}
+
+type ClientConfig struct {
+	Scopes []string
+	ID string
+	Secret string
+	OktaDomain string
+	OktaAuthServerID string
+	HTTPClient HTTPClient
+}
+type tokenRequest struct {
+	doneCh chan struct{}
+	errCh chan error
+}
+
+func (t *tokenRequest) done() {
+	close(t.doneCh)
+}
+
+func (t *tokenRequest) wait() <-chan struct{} {
+	return t.doneCh
 }
 
 // TokenResponse is a representation of a valid response body from the /token endpoint

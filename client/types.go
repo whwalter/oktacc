@@ -5,18 +5,10 @@ import (
 	"time"
 	"net/url"
 	"net/http"
-	"errors"
 )
 
 
-type ErrorResponse struct {
-	ErrorCode	string `json:"errorCode"`
-	ErrorSummary	string `json:"errorSummary"`
-	ErrorLink	string `json:"errorLink"`
-	ErrorId		string `json:"errorId"`
-	ErrorCauses	string `json:"errorCauses"`
-}
-// OktaWellKnown represents the valuse from an okta authserver .well-known endpoint
+// OAuthWellKnown represents the valuse from an okta authserver .well-known endpoint
 type OAuthWellKnown struct {
 	Issuer                                    string   `json:"issuer"`
 	AuthorizationEndpoint                     string   `json:"authorization_endpoint"`
@@ -55,16 +47,7 @@ type Client struct {
 }
 
 
-type MockClient struct {}
-
-func (mc *MockClient) Do(req *http.Request) (*http.Response, error){
-	return nil, errors.New("Failed")
-}
-
-func (mc *MockClient) Get(dest string) (*http.Response, error){
-	return nil, errors.New("Failed")
-}
-
+// HTTPClient wraps the Do and Get functions of http.Client to provide testing interface
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 	Get(dest string) (*http.Response, error)

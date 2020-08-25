@@ -155,8 +155,8 @@ func (c *Client) getToken() (string, error) {
 				}
 
 				c.lock()
-				defer c.unlock()
 				tokenResp.Expiry = t.Add(time.Second * time.Duration(tokenResp.ExpiresIn))
+				c.unlock()
 				c.token = tokenResp
 
 				c.request = nil

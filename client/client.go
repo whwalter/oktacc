@@ -71,18 +71,15 @@ func NewClient(config ClientConfig) (client *Client, err error) {
 
 
 func (c *Client) lock(){
-	fmt.Println("Locking")
 	c.mux.Lock()
 }
 
 func (c *Client) unlock(){
-	fmt.Println("Unlocking")
 	c.mux.Unlock()
 }
 
 func (c *Client) Get(dest string) (*http.Response, error) {
 
-	log.Info("Getting")
 	token, err := c.getToken()
 	if err != nil {
 		return nil, err
@@ -98,7 +95,6 @@ func (c *Client) Get(dest string) (*http.Response, error) {
 }
 
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	log.Info("Doing")
 	token, err := c.getToken()
 	if err != nil {
 		return nil, err
@@ -112,17 +108,15 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 }
 
 func (c *Client) getToken() (string, error) {
-	log.Info("In get token")
 	if c.token.AccessToken == "" || time.Now().After(c.token.Expiry) {
-
-		log.Info("Need a new token")
+		c.lock()
 		if c.request == nil {
-			log.Info("Getting a new token")
 			errCh := make(chan error, 3)
 			c.request = &tokenRequest{ doneCh: make(chan struct{}), errCh: errCh}
 
 			logger := log.WithFields(log.Fields{"id": c.config.ID, "method": http.MethodPost})
 			go func() {
+				fmt.Println("Requesting new token")
 				defer close(errCh)
 				defer c.request.done()
 				dest := c.tokenEndpoint
@@ -168,13 +162,9 @@ func (c *Client) getToken() (string, error) {
 				c.request = nil
 			}()
 		}
-		log.Info("Awaiting a new token")
-
-		c.lock()
 		request := c.request
 		c.unlock()
 
-		log.Info("Waiting for errors or the go routine to finish")
 		for err := range request.errCh {
 			if err != nil {
 				return "", err

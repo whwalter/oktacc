@@ -1,4 +1,4 @@
-module oktacc
+module github.com/whwalter/oktacc
 
 go 1.14
 

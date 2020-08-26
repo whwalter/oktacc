@@ -137,8 +137,6 @@ func (c *Client) getToken() (string, error) {
 
 				if resp.StatusCode >= 400 {
 					// TODO: rate limiting and backoff for hitting okta
-					var errResp []byte
-					json.NewDecoder(resp.Body).Decode(&errResp)
 					c.request.errCh <- fmt.Errorf("API Error from Okta: %v", resp)
 					return
 				}
@@ -167,10 +165,9 @@ func (c *Client) getToken() (string, error) {
 			}
 		}
 
-		select {
-		case <-request.wait():
-			return c.token.AccessToken, nil
-		}
+		// await a done signal from the goroutine
+		<-request.wait()
+		return c.token.AccessToken, nil
 	}
 	return c.token.AccessToken, nil
 }

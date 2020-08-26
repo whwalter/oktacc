@@ -90,8 +90,7 @@ func (c *Client) Get(dest string) (*http.Response, error) {
 	}
 	req, _ := http.NewRequest(http.MethodGet, dest, nil)
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
-	resp, err := c.config.HTTPClient.Do(req)
-	return resp, err
+	return c.config.HTTPClient.Do(req)
 }
 
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
@@ -103,8 +102,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("Failed to get okta token")
 	}
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
-	resp, err := c.config.HTTPClient.Do(req)
-	return resp, err
+	return c.config.HTTPClient.Do(req)
 }
 
 func (c *Client) getToken() (string, error) {
@@ -116,7 +114,6 @@ func (c *Client) getToken() (string, error) {
 
 			logger := log.WithFields(log.Fields{"id": c.config.ID, "method": http.MethodPost})
 			go func() {
-				fmt.Println("Requesting new token")
 				defer close(errCh)
 				defer c.request.done()
 				dest := c.tokenEndpoint
@@ -141,6 +138,7 @@ func (c *Client) getToken() (string, error) {
 				defer resp.Body.Close()
 
 				if resp.StatusCode >= 400 {
+					// TODO: rate limiting and backoff for hitting okta
 					var errResp []byte
 					json.NewDecoder(resp.Body).Decode(&errResp)
 					c.request.errCh <- fmt.Errorf("API Error from Okta: %v", resp)

@@ -1,12 +1,11 @@
 package client
 
 import (
+	"net/http"
+	"net/url"
 	"sync"
 	"time"
-	"net/url"
-	"net/http"
 )
-
 
 // OAuthWellKnown represents the valuse from an okta authserver .well-known endpoint
 type OAuthWellKnown struct {
@@ -34,18 +33,16 @@ type OAuthWellKnown struct {
 	RequestObjectSigningAlgValuesSupported    []string `json:"request_object_signing_alg_values_supported"`
 }
 
-
 // Client implements an okta client credentials flow client
 type Client struct {
-	mux sync.Mutex
-	request *tokenRequest
+	mux           sync.Mutex
+	request       *tokenRequest
 	tokenEndpoint url.URL
-	key string
-	scopes string
-	config ClientConfig
-	token TokenResponse
+	key           string
+	scopes        string
+	config        ClientConfig
+	token         TokenResponse
 }
-
 
 // HTTPClient wraps the Do and Get functions of http.Client to provide testing interface
 type HTTPClient interface {
@@ -54,16 +51,16 @@ type HTTPClient interface {
 }
 
 type ClientConfig struct {
-	Scopes []string
-	ID string
-	Secret string
-	OktaDomain string
+	Scopes           []string
+	ID               string
+	Secret           string
+	OktaDomain       string
 	OktaAuthServerID string
-	HTTPClient HTTPClient
+	HTTPClient       HTTPClient
 }
 type tokenRequest struct {
 	doneCh chan struct{}
-	errCh chan error
+	errCh  chan error
 }
 
 func (t *tokenRequest) done() {
@@ -76,11 +73,11 @@ func (t *tokenRequest) wait() <-chan struct{} {
 
 // TokenResponse is a representation of a valid response body from the /token endpoint
 type TokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType string `json:"token_type"`
-	ExpiresIn int `json:"expires_in"`
-	Expiry time.Time
-	Scope string `json:"scope"`
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+	Expiry       time.Time
+	Scope        string `json:"scope"`
 	RefreshToken string `json:"refresh_token"`
-	IDToken string `json:"id_token"`
+	IDToken      string `json:"id_token"`
 }

@@ -1,23 +1,22 @@
 package client
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
-	"encoding/json"
-	"encoding/base64"
-	"fmt"
-	"time"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
 const grant_type = "client_credentials"
 
-
 func encodeCredentials(ID, Secret string) string {
 	msg := ID + ":" + Secret
-	return base64.StdEncoding.EncodeToString([]byte(msg))	
+	return base64.StdEncoding.EncodeToString([]byte(msg))
 }
 
 func NewClient(config ClientConfig) (client *Client, err error) {
@@ -25,17 +24,17 @@ func NewClient(config ClientConfig) (client *Client, err error) {
 	// use default http.Client if non-was passed
 	if config.HTTPClient == nil {
 		config.HTTPClient = &http.Client{}
-	}	
+	}
 	// populate auth server url or use default
 	authServer := "/"
-	if config.OktaAuthServerID != "" { 
+	if config.OktaAuthServerID != "" {
 		authServer = authServer + config.OktaAuthServerID + "/"
 	} else {
-		authServer = authServer + "default/" 
+		authServer = authServer + "default/"
 	}
 
 	// create well-known oauth url and request metadata
-	wellKnownURL := "https://" + config.OktaDomain + "/oauth2" +  authServer + ".well-known/oauth-authorization-server"
+	wellKnownURL := "https://" + config.OktaDomain + "/oauth2" + authServer + ".well-known/oauth-authorization-server"
 	resp, err := config.HTTPClient.Get(wellKnownURL)
 	if err != nil {
 		return nil, err
@@ -63,18 +62,17 @@ func NewClient(config ClientConfig) (client *Client, err error) {
 
 	return &Client{
 		tokenEndpoint: *tURL,
-		key: key,
-		scopes: scopes,
-		config: config,
+		key:           key,
+		scopes:        scopes,
+		config:        config,
 	}, nil
 }
 
-
-func (c *Client) lock(){
+func (c *Client) lock() {
 	c.mux.Lock()
 }
 
-func (c *Client) unlock(){
+func (c *Client) unlock() {
 	c.mux.Unlock()
 }
 
@@ -110,7 +108,7 @@ func (c *Client) getToken() (string, error) {
 		c.lock()
 		if c.request == nil {
 			errCh := make(chan error, 3)
-			c.request = &tokenRequest{ doneCh: make(chan struct{}), errCh: errCh}
+			c.request = &tokenRequest{doneCh: make(chan struct{}), errCh: errCh}
 
 			logger := log.WithFields(log.Fields{"id": c.config.ID, "method": http.MethodPost})
 			go func() {
@@ -132,7 +130,7 @@ func (c *Client) getToken() (string, error) {
 				resp, err := c.config.HTTPClient.Do(req)
 				if err != nil {
 					logger.Errorf("Request for new token failed: %v", err)
-					c.request.errCh <- err	
+					c.request.errCh <- err
 					return
 				}
 				defer resp.Body.Close()
@@ -148,7 +146,7 @@ func (c *Client) getToken() (string, error) {
 				var tokenResp TokenResponse
 				if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 					logger.Errorf("Failed to decode token response: %v", err)
-					c.request.errCh <- err	
+					c.request.errCh <- err
 					return
 				}
 
@@ -166,11 +164,11 @@ func (c *Client) getToken() (string, error) {
 		for err := range request.errCh {
 			if err != nil {
 				return "", err
-			}		
+			}
 		}
 
 		select {
-		case <- request.wait():
+		case <-request.wait():
 			return c.token.AccessToken, nil
 		}
 	}
